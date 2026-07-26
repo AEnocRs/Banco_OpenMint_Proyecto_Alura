@@ -13,3 +13,4 @@ faiss-cpu
 langchain-huggingface>=1.2.2
 sentence-transformers
 Streamlit
+torchvision
