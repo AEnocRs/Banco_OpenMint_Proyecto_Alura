@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 from app import grafo  # Ajusta el import si tu archivo se llama diferente
 
 # ============================================================
@@ -37,6 +38,7 @@ TEXTS = {
         "subtitle_welcome": "Nuestro agente de IA avanzado gestiona el triaje de RAG para políticas internas, contratos y reportes bancarios institucionales.",
         "btn_chat": "Acceso Chat IA",
         "btn_reports": "Explorar Reportes",
+        "btn_reset": "🗑️ Reiniciar Chat",
         "title_docs": "Centro de Documentación",
         "subtitle_docs": "Acceda de forma segura a los activos legales, técnicos y operativos de su institución.",
         "btn_upload": "Subir Documento",
@@ -79,6 +81,7 @@ TEXTS = {
         "subtitle_welcome": "Our advanced AI agent manages RAG triage for internal policies, contracts and institutional banking reports.",
         "btn_chat": "Access AI Chat",
         "btn_reports": "Explore Reports",
+        "btn_reset": "🗑️ Reset Chat",
         "title_docs": "Documentation Center",
         "subtitle_docs": "Securely access the legal, technical and operational assets of your institution.",
         "btn_upload": "Upload Document",
@@ -264,12 +267,17 @@ inject_css()
 # SIDEBAR
 # ============================================================
 with st.sidebar:
-    st.markdown(f"""
-    <div style="text-align:center; padding: 0.8rem 0 1.2rem 0;">
-        <h2 style="color:{theme['primary']}; margin:0; font-weight:800;">OpenMint</h2>
-        <p style="color:{theme['secondary']}; font-size:0.72rem; margin:0; letter-spacing:1px;">INSTITUTIONAL DEFI</p>
-    </div>
-    """, unsafe_allow_html=True)
+    # Lógica para mostrar el logo si existe, o el texto como respaldo
+    if os.path.exists("logo.png"):
+        # Asegúrate de colocar tu imagen con el nombre exacto 'logo.png' en la misma carpeta que gui.py
+        st.image("logo.png", use_container_width=True)
+    else:
+        st.markdown(f"""
+        <div style="text-align:center; padding: 0.8rem 0 1.2rem 0;">
+            <h2 style="color:{theme['primary']}; margin:0; font-weight:800;">OpenMint</h2>
+            <p style="color:{theme['secondary']}; font-size:0.72rem; margin:0; letter-spacing:1px;">INSTITUTIONAL DEFI</p>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -283,9 +291,13 @@ with st.sidebar:
         st.session_state.page = "chat"
         st.rerun()
 
+    # Botón para limpiar el historial de conversación
+    if st.button(t["btn_reset"], use_container_width=True, key="side_reset"):
+        st.session_state.mensajes = []
+        st.rerun()
+
     st.markdown("---")
     
-    # Botones de Tema e Idioma movidos a la barra lateral para mayor limpieza visual
     col_theme, col_lang = st.columns(2)
     with col_theme:
         if st.button("🌙" if st.session_state.theme == "light" else "☀️", use_container_width=True, key="side_theme"):
@@ -299,7 +311,6 @@ with st.sidebar:
     st.markdown("---")
     st.caption(t["docs_loaded"])
 
-    # Lista de PDFs (solo nombres, sin descarga ni vista)
     pdfs = [
         "Políticas de Préstamo.pdf",
         "Contratos Cripto 2024.pdf",
