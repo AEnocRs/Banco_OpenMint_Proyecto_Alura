@@ -249,40 +249,16 @@ def inject_css():
             font-size: 0.9rem;
         }}
 
-        #MainMenu, footer, header {{visibility: hidden;}}
+        header {{
+            background-color: transparent !important;
+        }}
+
+        #MainMenu, footer {{visibility: hidden;}}
     </style>
     """, unsafe_allow_html=True)
 
 inject_css()
 
-# ============================================================
-# BARRA SUPERIOR FIJA (siempre visible)
-# ============================================================
-st.markdown(f"### {t['quick_nav']}")
-nav1, nav2, nav3, nav4, nav5 = st.columns([1.2, 1.2, 1.2, 1.2, 1.5])
-
-with nav1:
-    if st.button(f"🏠 {t['nav_welcome']}", use_container_width=True, key="top_welcome"):
-        st.session_state.page = "bienvenida"
-        st.rerun()
-with nav2:
-    if st.button(f"📄 {t['nav_docs']}", use_container_width=True, key="top_docs"):
-        st.session_state.page = "documentos"
-        st.rerun()
-with nav3:
-    if st.button(f"💬 {t['nav_chat']}", use_container_width=True, key="top_chat"):
-        st.session_state.page = "chat"
-        st.rerun()
-with nav4:
-    if st.button("🌙" if st.session_state.theme == "light" else "☀️", use_container_width=True, key="top_theme"):
-        st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
-        st.rerun()
-with nav5:
-    if st.button("ES → EN" if st.session_state.lang == "es" else "EN → ES", use_container_width=True, key="top_lang"):
-        st.session_state.lang = "en" if st.session_state.lang == "es" else "es"
-        st.rerun()
-
-st.markdown("---")
 
 # ============================================================
 # SIDEBAR
@@ -306,6 +282,19 @@ with st.sidebar:
     if st.button(f"💬  {t['nav_chat']}", use_container_width=True, key="side_chat"):
         st.session_state.page = "chat"
         st.rerun()
+
+    st.markdown("---")
+    
+    # Botones de Tema e Idioma movidos a la barra lateral para mayor limpieza visual
+    col_theme, col_lang = st.columns(2)
+    with col_theme:
+        if st.button("🌙" if st.session_state.theme == "light" else "☀️", use_container_width=True, key="side_theme"):
+            st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
+            st.rerun()
+    with col_lang:
+        if st.button("ES ↔ EN", use_container_width=True, key="side_lang"):
+            st.session_state.lang = "en" if st.session_state.lang == "es" else "es"
+            st.rerun()
 
     st.markdown("---")
     st.caption(t["docs_loaded"])

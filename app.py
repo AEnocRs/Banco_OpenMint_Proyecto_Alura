@@ -33,7 +33,8 @@ class TriajeOut(BaseModel):
 
 PROMPT_TRIAJE = """
 Eres el especialista de triaje del Banco Digital OpenMint.
-Tu única tarea es clasificar el mensaje del usuario y devolver SOLO un JSON válido con esta estructura:
+
+Tu trabajo es clasificar la pregunta del usuario. Devuelve ÚNICAMENTE un JSON válido con esta estructura:
 
 {
   "decision": "AUTO_RESOLVER" | "PEDIR_INFO" | "ABRIR_TICKET" | "OUT_OF_SCOPE",
@@ -41,14 +42,30 @@ Tu única tarea es clasificar el mensaje del usuario y devolver SOLO un JSON vá
   "campos_faltantes": []
 }
 
-Reglas de decisión:
+### Reglas de decisión (sigue este orden de prioridad):
 
-- AUTO_RESOLVER: Preguntas claras sobre políticas, reglamentos, procedimientos, comisiones, condiciones de productos, staking, mora, congelamientos, contratos inteligentes o cualquier documento interno del banco.
-- PEDIR_INFO: Mensajes vagos, incompletos o sin suficiente contexto para identificar el tema (ej. "necesito ayuda con una política", "tengo un problema").
-- ABRIR_TICKET: Solicitudes de excepción, autorización especial, problemas de acceso, fallos técnicos o cuando el usuario pide explícitamente abrir un ticket.
-- OUT_OF_SCOPE: Preguntas que no tienen ninguna relación con el banco, sus productos o sus políticas (ej. capitales de países, clima, recetas, etc.).
+1. **AUTO_RESOLVER** (prioridad alta):
+   - Preguntas sobre productos del banco (cuentas de ahorro, depósitos, créditos, staking, etc.)
+   - Preguntas sobre montos mínimos, tasas de interés, comisiones, plazos, condiciones
+   - Preguntas sobre privacidad de datos, seguridad, uso de información personal
+   - Preguntas sobre políticas, reglamentos, términos y condiciones, contratos
+   - Cualquier pregunta que pueda responderse con la documentación interna del banco
 
-Analiza el mensaje y elige la decisión más adecuada. No inventes información.
+2. **PEDIR_INFO**:
+   - Solo cuando la pregunta es extremadamente vaga (ej. "necesito ayuda", "tengo un problema")
+   - O cuando falta un dato crítico e imprescindible para poder buscar en los documentos
+
+3. **ABRIR_TICKET**:
+   - El usuario pide explícitamente abrir un ticket, reporta un error técnico, o solicita una excepción/autorización especial
+
+4. **OUT_OF_SCOPE**:
+   - Preguntas que no tienen ninguna relación con el banco (clima, capitales de países, recetas, etc.)
+
+### Importante:
+- Si la pregunta menciona "cuenta de ahorro", "interés", "monto mínimo", "privacidad", "datos personales", "seguridad" → casi siempre es AUTO_RESOLVER.
+- "campos_faltantes" solo úsalo cuando realmente sea PEDIR_INFO, y pon nombres cortos (ej. ["tipo de cuenta", "monto aproximado"]).
+
+Responde SOLO con el JSON, sin texto adicional.
 """
 
 PROMPT_RAG_SYSTEM = """
@@ -85,15 +102,28 @@ prompt_rag = ChatPromptTemplate.from_messages([
 ])
 
 document_chain = create_stuff_documents_chain(llm, prompt_rag)
-chain_de_triaje = llm.with_structured_output(TriajeOut)
+# chain_de_triaje = llm.with_structured_output(TriajeOut) se modifica para adaptarse a la nueva versión del triaje
 
+chain_de_triaje = llm.with_structured_output(
+    TriajeOut,
+    method="json_mode"
+)
 
 def triaje(mensaje: str) -> Dict:
-    salida: TriajeOut = chain_de_triaje.invoke([
-        SystemMessage(content=PROMPT_TRIAJE),
-        HumanMessage(content=mensaje)
-    ])
-    return salida.model_dump()
+    try:
+        salida: TriajeOut = chain_de_triaje.invoke([
+            SystemMessage(content=PROMPT_TRIAJE),
+            HumanMessage(content=mensaje)
+        ])
+        return salida.model_dump()
+    except Exception as e:
+        print(f"[ERROR TRIAJE] {e}")
+        # Fallback seguro: tratamos la pregunta como válida del banco
+        return {
+            "decision": "AUTO_RESOLVER",
+            "urgencia": "BAJA",
+            "campos_faltantes": []
+        }
 
 
 # ============================================================
