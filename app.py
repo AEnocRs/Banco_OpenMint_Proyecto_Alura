@@ -28,7 +28,7 @@ class TriajeOut(BaseModel):
 
 
 # ============================================================
-# 2. PROMPTS RE-ENCUADRADOS
+# 2. PROMPTS
 # ============================================================
 
 PROMPT_TRIAJE = """
@@ -69,16 +69,39 @@ Responde SOLO con el JSON, sin texto adicional.
 """
 
 PROMPT_RAG_SYSTEM = """
-Eres el asistente oficial de políticas y documentación del Banco Digital OpenMint.
+Eres el asistente oficial de políticas y productos del Banco Digital OpenMint.
 
-Reglas estrictas:
-1. Responde ÚNICAMENTE basándote en el contexto que se te proporciona.
-2. Si el contexto contiene la información necesaria, responde de forma clara, profesional y en español.
-3. Si el contexto NO contiene la información suficiente para responder con seguridad, responde exactamente con esta frase:
-   "No poseo la información suficiente en la documentación disponible para responder a tu pregunta."
-4. Nunca inventes datos, cifras, plazos ni condiciones.
-5. No menciones que eres un modelo de lenguaje ni que usas RAG.
-6. No digas "según el contexto" ni frases similares; responde de forma natural.
+Tu objetivo es responder de forma clara, útil y profesional basándote ÚNICAMENTE en el contexto proporcionado.
+
+### Reglas de respuesta:
+
+1. **Responde lo que sí está documentado**
+   - Si la pregunta tiene varias partes, responde primero todas las que sí puedas contestar con el contexto.
+   - Sé concreto y usa la información de los documentos.
+
+2. **Sé honesto con lo que falta**
+   - Si algún dato específico no aparece en el contexto (por ejemplo un monto mínimo exacto o una tasa precisa), dilo claramente.
+   - Ejemplo de frase: "La documentación actual no especifica el monto mínimo exacto ni la tasa de interés vigente."
+
+3. **Nunca inventes cifras, tasas ni condiciones**
+   - No asumas montos, porcentajes ni plazos que no estén en el contexto.
+
+4. **Sé orientativo y comercial (cuando sea natural)**
+   - Si el usuario pregunta por ahorro, puedes mencionar las ventajas de los depósitos a plazo fijo (mejores tasas / APY preferencial) si el contexto lo permite.
+   - Si pregunta por liquidez o necesidades de dinero, puedes orientar hacia las líneas de crédito disponibles (tradicional o con colateral cripto) cuando la documentación lo soporte.
+   - No seas agresivo ni fuerces la venta. Solo orienta de forma útil.
+
+5. **Estructura recomendada de respuesta** (cuando la pregunta es múltiple):
+   - Primero responde lo que sí tienes.
+   - Luego indica qué información no está disponible en la documentación actual.
+   - Cierra con una orientación útil o invitación a contactar soporte / revisar el tarifario actualizado si hace falta.
+
+6. **Tono**
+   - Profesional, claro, cercano y confiable.
+   - Habla en español natural.
+   - No menciones que eres un modelo de lenguaje ni que usas RAG.
+
+Responde siempre basándote en el contexto. Si el contexto está vacío o no es relevante, indica que no posees la información suficiente en la documentación disponible.
 """
 
 # ============================================================
@@ -102,12 +125,12 @@ prompt_rag = ChatPromptTemplate.from_messages([
 ])
 
 document_chain = create_stuff_documents_chain(llm, prompt_rag)
-# chain_de_triaje = llm.with_structured_output(TriajeOut) se modifica para adaptarse a la nueva versión del triaje
 
 chain_de_triaje = llm.with_structured_output(
     TriajeOut,
     method="json_mode"
 )
+
 
 def triaje(mensaje: str) -> Dict:
     try:
@@ -173,17 +196,16 @@ docs.extend(csv_docs)
 print(f"Total de documentos (PDFs + CSVs) cargados: {len(docs)}")
 
 # ============================================================
-# 5. SPLITTING + EMBEDDINGS + FAISS  (versión corregida)
-# ============================================================ 
+# 5. SPLITTING + EMBEDDINGS + FAISS
+# ============================================================
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings   # ← versión nueva (recomendado)
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
 splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=80)
 chunks = splitter.split_documents(docs)
 
-# Embedding multilingual (mejor para español)
 modelo_embeddings = HuggingFaceEmbeddings(
     model_name="paraphrase-multilingual-MiniLM-L12-v2"
 )
@@ -209,10 +231,7 @@ def get_latest_source_mod_time() -> datetime.datetime:
 
 
 current_sources_mod_time = get_latest_source_mod_time()
-rebuild_faiss = True          # ← forzamos reconstrucción siempre la primera vez
-
-# Si quieres que solo reconstruya cuando cambien los PDFs, cambia a False
-# y borra manualmente la carpeta faiss_index cuando cambies de modelo.
+rebuild_faiss = False   # Cambia a False si quieres reutilizar el índice existente
 
 if os.path.exists(FAISS_PATH) and os.path.exists(FAISS_TIMESTAMP_FILE) and not rebuild_faiss:
     try:
@@ -233,10 +252,9 @@ if os.path.exists(FAISS_PATH) and os.path.exists(FAISS_TIMESTAMP_FILE) and not r
                 modelo_embeddings,
                 allow_dangerous_deserialization=True
             )
-            # === CAMBIO CLAVE: usamos similarity (top-k) en lugar de score_threshold ===
             retriever = vectorstore.as_retriever(
                 search_type="similarity",
-                search_kwargs={"k": 4}
+                search_kwargs={"k": 5}
             )
             print("Vectorstore FAISS cargado.")
     except Exception as e:
@@ -248,17 +266,15 @@ else:
 if rebuild_faiss:
     print("Construyendo nuevo vectorstore FAISS con embedding multilingual...")
     vectorstore = FAISS.from_documents(chunks, modelo_embeddings)
-    
-    # === CAMBIO CLAVE ===
     retriever = vectorstore.as_retriever(
-        search_type="similarity",          # top-k puro (más fiable)
-        search_kwargs={"k": 4}
+        search_type="similarity",
+        search_kwargs={"k": 5}
     )
-    
     vectorstore.save_local(FAISS_PATH)
     with open(FAISS_TIMESTAMP_FILE, 'w') as f:
         f.write(current_sources_mod_time.isoformat())
     print("Vectorstore FAISS creado y guardado correctamente.")
+
 
 # ============================================================
 # 6. FUNCIÓN RAG
@@ -269,7 +285,7 @@ def busqueda_de_respuestas_RAG(pregunta: str) -> Dict:
 
     if not documentos_relacionados:
         return {
-            "respuesta": "La respuesta a tu pregunta está fuera de los límites de mi documentación empresarial.",
+            "respuesta": "No poseo la información suficiente en la documentación disponible para responder a tu pregunta.",
             "citaciones": [],
             "documentos_encontrados": False,
             "motivo_no_respuesta": "NO_DOCUMENTS_FOUND"
@@ -280,14 +296,16 @@ def busqueda_de_respuestas_RAG(pregunta: str) -> Dict:
         "context": documentos_relacionados
     })
 
-    # Detección robusta de fallo del LLM
     answer_clean = answer.strip().lower()
+
+    # Solo consideramos fallo total si el modelo dice explícitamente que no tiene nada
     if (
         "no poseo la información suficiente" in answer_clean
-        or answer_clean in ["no lo sé", "no lo se", "no sé", "no se"]
+        and "documentación actual no especifica" not in answer_clean
+        and len(answer_clean) < 120
     ):
         return {
-            "respuesta": "No poseo la información suficiente en la documentación disponible para responder a tu pregunta.",
+            "respuesta": answer,
             "citaciones": [],
             "documentos_encontrados": False,
             "motivo_no_respuesta": "LLM_COULD_NOT_ANSWER"
@@ -326,6 +344,16 @@ def nodo_auto_resolver(state: AgentState) -> AgentState:
 
 def nodo_pedir_info(state: AgentState) -> AgentState:
     print("Ejecutando nodo 'pedir_info'...")
+
+    # Si venimos de un fallo parcial del RAG, preferimos devolver la respuesta parcial
+    # en lugar de pedir más información genérica
+    if state.get("respuesta") and state.get("accion_final") == "FALLO_RAG":
+        return {
+            "respuesta": state["respuesta"],
+            "citaciones": state.get("citaciones", []),
+            "accion_final": "AUTO_RESOLVER_PARCIAL"
+        }
+
     return {
         "respuesta": f"Necesito mayor información sobre tu solicitud: «{state['pregunta']}». ¿Puedes darme más detalles?",
         "citaciones": [],
@@ -353,7 +381,7 @@ def nodo_out_of_scope(state: AgentState) -> AgentState:
 
 
 # ============================================================
-# 8. ARISTAS DE DECISIÓN (LÓGICA CORREGIDA)
+# 8. ARISTAS DE DECISIÓN
 # ============================================================
 
 def arista_decision_triaje(state: AgentState) -> str:
@@ -366,15 +394,17 @@ def arista_decision_triaje(state: AgentState) -> str:
         return "info"
     elif decision == "ABRIR_TICKET":
         return "ticket"
-    else:  # OUT_OF_SCOPE
+    else:
         return "out_of_scope"
 
 
 def arista_decision_rag(state: AgentState) -> str:
     """
-    Lógica simplificada y robusta:
-    - Si el RAG tuvo éxito → terminar
-    - Si el RAG falló → out_of_scope (ya no dependemos de keywords frágiles)
+    Lógica menos agresiva:
+    - Si el RAG tuvo éxito → ok
+    - Si falló pero la pregunta parece del dominio del banco → info
+      (el nodo pedir_info devolverá la respuesta parcial si existe)
+    - Solo out_of_scope cuando claramente no tiene relación con OpenMint
     """
     print("Decidiendo el flujo después del nodo 'auto_resolver'...")
 
@@ -382,9 +412,33 @@ def arista_decision_rag(state: AgentState) -> str:
         print("RAG exitoso → finalizando.")
         return "ok"
 
-    print(f"RAG falló. Motivo: {state.get('motivo_no_respuesta')}")
-    # Cualquier fallo de RAG se considera fuera de alcance documental
-    return "out_of_scope"
+    pregunta = state.get("pregunta", "").lower()
+
+    KEYWORDS_DOMINIO = [
+        "cuenta", "ahorro", "corriente", "depósito", "plazo fijo", "interés", "tasa",
+        "crédito", "prestamo", "préstamo", "financiamiento", "colateral", "garantía",
+        "staking", "rendimiento", "apy", "yield",
+        "retiro", "transferencia", "comisión", "tarifa", "límite",
+        "exchange", "cripto", "bitcoin", "ethereum", "stablecoin", "usdt", "usdc",
+        "política", "privacidad", "datos personales", "seguridad", "fraude",
+        "kyc", "aml", "lavado", "mora", "tolerancia", "ticket", "soporte",
+        "congelamiento", "volatilidad", "custodia", "billetera",
+        "reglamento", "términos", "condiciones", "contrato", "documento"
+    ]
+
+    es_dominio_banco = any(keyword in pregunta for keyword in KEYWORDS_DOMINIO)
+    motivo = state.get("motivo_no_respuesta")
+
+    if es_dominio_banco:
+        print(f"RAG falló pero la pregunta es del dominio del banco. Motivo: {motivo} → info")
+        return "info"
+
+    if motivo in ["NO_DOCUMENTS_FOUND", "LLM_COULD_NOT_ANSWER"]:
+        print("RAG falló y la pregunta no parece del dominio del banco → out_of_scope")
+        return "out_of_scope"
+
+    print("Caso no clasificado → info")
+    return "info"
 
 
 # ============================================================
@@ -412,6 +466,7 @@ workflow.add_conditional_edges("triaje", arista_decision_triaje, {
 
 workflow.add_conditional_edges("auto_resolver", arista_decision_rag, {
     "ok": END,
+    "info": "pedir_info",
     "out_of_scope": "out_of_scope"
 })
 
@@ -420,8 +475,3 @@ workflow.add_edge("abrir_ticket", END)
 workflow.add_edge("out_of_scope", END)
 
 grafo = workflow.compile()
-
-
-# ============================================================
-# 10. se procede a dar relebo a backend para pruebas de flujo
-# ============================================================

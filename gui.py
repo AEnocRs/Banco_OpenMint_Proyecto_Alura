@@ -444,3 +444,4 @@ elif st.session_state.page == "chat":
                             st.info(content[:400] + "..." if len(content) > 400 else content)
             except Exception as e:
                 st.error(f"Error: {e}")
+                
