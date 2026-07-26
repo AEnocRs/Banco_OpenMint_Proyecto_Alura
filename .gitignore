@@ -1,0 +1,5 @@
+venv/
+__pycache__/
+.env
+faiss_index/
+faiss_index_timestamp.txt
